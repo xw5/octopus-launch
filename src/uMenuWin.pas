@@ -6,7 +6,7 @@ interface
 
 uses
   Windows, Messages, SysUtils, Classes, Graphics, Forms, Controls, ExtCtrls,
-  LMessages, LCLType, Math, uConfig, uIcons, uLauncher, uHooks, uWinEx;
+  LMessages, LCLType, Math, uConfig, uIcons, uLauncher, uHooks, uWinEx, uLang;
 
 type
   { TMenuForm - 自绘暗色菜单窗口，支持递归子菜单 }
@@ -548,7 +548,7 @@ begin
   if Config.Items.Count = 0 then
   begin
     // UTF-8 字面量必须经 UnicodeString 转码，否则 MessageBoxW 乱码
-    MessageBoxW(0, PWideChar(UnicodeString('菜单为空，请先在设置中添加菜单项。')),
+    MessageBoxW(0, PWideChar(UnicodeString(L(lkEmptyMenu))),
       PWideChar(UnicodeString('octopus-launch')), MB_ICONINFORMATION);
     NotifyMenuClosed;
     Exit;

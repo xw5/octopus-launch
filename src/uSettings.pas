@@ -14,6 +14,10 @@ type
   private
     FLoading: Boolean;
     FCurrent: TMenuItem;
+    // 分组框与标签需保留引用，语言切换时统一更新文案并重排
+    GBTrigger, GBMenu: TGroupBox;
+    LblDwell, LblZone, LblName, LblType, LblTarget, LblParams, LblWorkDir,
+    LblLang: TLabel;
     // 触发区
     CbTop, CbBottom, CbLeft, CbRight, CbAutoRun: TCheckBox;
     SeDwell, SeZone: TSpinEdit;
@@ -26,17 +30,25 @@ type
     BtnBrowseTarget, BtnBrowseDir: TButton;
     CbAdmin: TCheckBox;
     BtnSave, BtnCancel: TButton;
+    // 语言
+    CmbLang: TComboBox;
     DlgOpen: TOpenDialog;
     DlgDir: TSelectDirectoryDialog;
     procedure BuildUI;
+    // 按当前语言设置全部文案，并按实测文本宽度重排触发区（防中英文切换后撑破/重叠）
+    procedure ApplyCaptions;
     procedure RebuildTree;
     function GetParentList(Node: TTreeNode): TMenuItemList;
+    function FindNodeByData(AData: TObject): TTreeNode;
+    // 在 List 的 AIdx 位置插入新项并选中对应树节点（无选中时调用方传 List.Count）
+    procedure InsertAndSelect(List: TMenuItemList; AIdx: Integer; Item: TMenuItem);
     procedure LoadDetail(Node: TTreeNode);
     procedure CommitDetail;
     procedure UpdateDetailEnable;
     procedure SetDetailControls(AEnabled: Boolean);
     // 事件
     procedure TreeSelectionChanged(Sender: TObject);
+    procedure LangChanged(Sender: TObject);
     procedure DoAdd(Sender: TObject);
     procedure DoAddChild(Sender: TObject);
     procedure DoAddSep(Sender: TObject);
@@ -63,7 +75,7 @@ procedure ShowSettingsForm;
 implementation
 
 uses
-  Registry, uHooks;
+  Registry, uHooks, uLang;
 
 procedure ShowSettingsForm;
 var
@@ -92,9 +104,8 @@ end;
 constructor TSettingsForm.CreateNew(AOwner: TComponent; Num: Integer);
 begin
   inherited CreateNew(AOwner, Num);
-  Caption := 'octopus-launch 设置';
-  Width := 720;
-  Height := 560;
+  Width := 740;
+  Height := 570;
   Position := poScreenCenter;
   BorderStyle := bsSingle;
   Font.Name := 'Microsoft YaHei UI';
@@ -103,6 +114,7 @@ begin
   DlgOpen := TOpenDialog.Create(Self);
   DlgDir := TSelectDirectoryDialog.Create(Self);
   BuildUI;
+  ApplyCaptions;
   RebuildTree;
 
   CbTop.Checked := edTop in Config.Edges;
@@ -124,14 +136,11 @@ begin
 end;
 
 procedure TSettingsForm.BuildUI;
-var
-  GB, GBD: TGroupBox;
 
-  function MakeCheck(AParent: TWinControl; const ACaption: string; AX, AY: Integer): TCheckBox;
+  function MakeCheck(AParent: TWinControl; AX, AY: Integer): TCheckBox;
   begin
     Result := TCheckBox.Create(Self);
     Result.Parent := AParent;
-    Result.Caption := ACaption;
     Result.Left := AX;
     Result.Top := AY;
   end;
@@ -149,108 +158,195 @@ var
       Result.OnClick := AHandler;
   end;
 
-  function MakeLabel(AParent: TWinControl; const ACaption: string;
-    AX, AY: Integer): TLabel;
+  function MakeLabel(AParent: TWinControl; AX, AY: Integer): TLabel;
   begin
     Result := TLabel.Create(Self);
     Result.Parent := AParent;
-    Result.Caption := ACaption;
     Result.Left := AX;
     Result.Top := AY;
   end;
 
 begin
   // ---- 触发 ----
-  GB := TGroupBox.Create(Self);
-  GB.Parent := Self;
-  GB.Caption := ' 触发 ';
-  GB.Left := 10; GB.Top := 10; GB.Width := 690; GB.Height := 90;
+  GBTrigger := TGroupBox.Create(Self);
+  GBTrigger.Parent := Self;
+  GBTrigger.Left := 10; GBTrigger.Top := 10;
+  GBTrigger.Width := 720; GBTrigger.Height := 96;
 
-  CbTop := MakeCheck(GB, '上边', 15, 22);
-  CbBottom := MakeCheck(GB, '下边', 80, 22);
-  CbLeft := MakeCheck(GB, '左边', 145, 22);
-  CbRight := MakeCheck(GB, '右边', 210, 22);
+  CbTop := MakeCheck(GBTrigger, 15, 22);
+  CbBottom := MakeCheck(GBTrigger, 80, 22);
+  CbLeft := MakeCheck(GBTrigger, 145, 22);
+  CbRight := MakeCheck(GBTrigger, 210, 22);
 
-  MakeLabel(GB, '贴边停留(毫秒):', 15, 55);
+  LblDwell := MakeLabel(GBTrigger, 15, 57);
   SeDwell := TSpinEdit.Create(Self);
-  SeDwell.Parent := GB;
-  SeDwell.Left := 130; SeDwell.Top := 51; SeDwell.Width := 80;
+  SeDwell.Parent := GBTrigger;
+  SeDwell.Left := 130; SeDwell.Top := 53; SeDwell.Width := 80;
   SeDwell.MinValue := 0; SeDwell.MaxValue := 5000;
 
-  MakeLabel(GB, '触发区宽度(px):', 240, 55);
+  LblZone := MakeLabel(GBTrigger, 240, 57);
   SeZone := TSpinEdit.Create(Self);
-  SeZone.Parent := GB;
-  SeZone.Left := 350; SeZone.Top := 51; SeZone.Width := 70;
+  SeZone.Parent := GBTrigger;
+  SeZone.Left := 350; SeZone.Top := 53; SeZone.Width := 70;
   SeZone.MinValue := 2; SeZone.MaxValue := 200;
 
-  CbAutoRun := MakeCheck(GB, '开机自启', 450, 55);
+  CbAutoRun := MakeCheck(GBTrigger, 450, 55);
 
   // ---- 菜单项 ----
-  GBD := TGroupBox.Create(Self);
-  GBD.Parent := Self;
-  GBD.Caption := ' 菜单项 ';
-  GBD.Left := 10; GBD.Top := 110; GBD.Width := 690; GBD.Height := 390;
+  GBMenu := TGroupBox.Create(Self);
+  GBMenu.Parent := Self;
+  GBMenu.Left := 10; GBMenu.Top := 116;
+  GBMenu.Width := 720; GBMenu.Height := 390;
 
   Tree := TTreeView.Create(Self);
-  Tree.Parent := GBD;
+  Tree.Parent := GBMenu;
   Tree.Left := 10; Tree.Top := 18; Tree.Width := 250; Tree.Height := 360;
   Tree.OnSelectionChanged := @TreeSelectionChanged;
   Tree.ReadOnly := True;
 
-  BtnAdd := MakeBtn(GBD, '新增项目', 270, 18, 100, @DoAdd);
-  BtnAddChild := MakeBtn(GBD, '新增子项', 270, 48, 100, @DoAddChild);
-  BtnAddSep := MakeBtn(GBD, '新增分隔符', 270, 78, 100, @DoAddSep);
-  BtnDelete := MakeBtn(GBD, '删除', 270, 108, 100, @DoDelete);
-  BtnUp := MakeBtn(GBD, '上移', 270, 138, 100, @DoUp);
-  BtnDown := MakeBtn(GBD, '下移', 270, 168, 100, @DoDown);
+  BtnAdd := MakeBtn(GBMenu, '', 270, 18, 105, @DoAdd);
+  BtnAddChild := MakeBtn(GBMenu, '', 270, 48, 105, @DoAddChild);
+  BtnAddSep := MakeBtn(GBMenu, '', 270, 78, 105, @DoAddSep);
+  BtnDelete := MakeBtn(GBMenu, '', 270, 108, 105, @DoDelete);
+  BtnUp := MakeBtn(GBMenu, '', 270, 138, 105, @DoUp);
+  BtnDown := MakeBtn(GBMenu, '', 270, 168, 105, @DoDown);
 
   // 详情区
-  MakeLabel(GBD, '名称:', 380, 22);
+  LblName := MakeLabel(GBMenu, 385, 22);
   EdName := TEdit.Create(Self);
-  EdName.Parent := GBD;
-  EdName.Left := 440; EdName.Top := 18; EdName.Width := 235;
+  EdName.Parent := GBMenu;
+  EdName.Left := 445; EdName.Top := 18; EdName.Width := 240;
   EdName.OnChange := @NameChanged;
 
-  MakeLabel(GBD, '类型:', 380, 52);
+  LblType := MakeLabel(GBMenu, 385, 52);
   CmbType := TComboBox.Create(Self);
-  CmbType.Parent := GBD;
-  CmbType.Left := 440; CmbType.Top := 48; CmbType.Width := 120;
+  CmbType.Parent := GBMenu;
+  CmbType.Left := 445; CmbType.Top := 48; CmbType.Width := 120;
   CmbType.Style := csDropDownList;
-  CmbType.Items.Add('软件');
-  CmbType.Items.Add('网址');
-  CmbType.Items.Add('目录');
-  CmbType.Items.Add('分隔符');
   CmbType.OnChange := @TypeChanged;
 
-  MakeLabel(GBD, '目标:', 380, 82);
+  LblTarget := MakeLabel(GBMenu, 385, 82);
   EdTarget := TEdit.Create(Self);
-  EdTarget.Parent := GBD;
-  EdTarget.Left := 440; EdTarget.Top := 78; EdTarget.Width := 190;
+  EdTarget.Parent := GBMenu;
+  EdTarget.Left := 445; EdTarget.Top := 78; EdTarget.Width := 175;
   EdTarget.OnChange := @TargetChanged;
-  BtnBrowseTarget := MakeBtn(GBD, '浏览...', 635, 76, 50, @BrowseTarget);
+  BtnBrowseTarget := MakeBtn(GBMenu, '', 628, 76, 64, @BrowseTarget);
 
-  MakeLabel(GBD, '参数:', 380, 112);
+  LblParams := MakeLabel(GBMenu, 385, 112);
   EdParams := TEdit.Create(Self);
-  EdParams.Parent := GBD;
-  EdParams.Left := 440; EdParams.Top := 108; EdParams.Width := 235;
+  EdParams.Parent := GBMenu;
+  EdParams.Left := 445; EdParams.Top := 108; EdParams.Width := 240;
   EdParams.OnChange := @ParamsChanged;
 
-  MakeLabel(GBD, '工作目录:', 380, 142);
+  LblWorkDir := MakeLabel(GBMenu, 385, 142);
   EdWorkDir := TEdit.Create(Self);
-  EdWorkDir.Parent := GBD;
-  EdWorkDir.Left := 440; EdWorkDir.Top := 138; EdWorkDir.Width := 190;
+  EdWorkDir.Parent := GBMenu;
+  EdWorkDir.Left := 445; EdWorkDir.Top := 138; EdWorkDir.Width := 175;
   EdWorkDir.OnChange := @WorkDirChanged;
-  BtnBrowseDir := MakeBtn(GBD, '浏览...', 635, 136, 50, @BrowseDir);
+  BtnBrowseDir := MakeBtn(GBMenu, '', 628, 136, 64, @BrowseDir);
 
   CbAdmin := TCheckBox.Create(Self);
-  CbAdmin.Parent := GBD;
-  CbAdmin.Caption := '以管理员身份运行';
-  CbAdmin.Left := 440; CbAdmin.Top := 170;
+  CbAdmin.Parent := GBMenu;
+  CbAdmin.Left := 445; CbAdmin.Top := 170;
   CbAdmin.OnChange := @AdminChanged;
 
+  // ---- 语言 ----
+  LblLang := MakeLabel(Self, 15, 524);
+  CmbLang := TComboBox.Create(Self);
+  CmbLang.Parent := Self;
+  CmbLang.Left := 75; CmbLang.Top := 520; CmbLang.Width := 120;
+  CmbLang.Style := csDropDownList;
+  // 语言名固定显示原生名称，不随语言切换；"跟随系统"文案在 ApplyCaptions 中按当前语言刷新
+  CmbLang.Items.Add('跟随系统');
+  CmbLang.Items.Add('中文');
+  CmbLang.Items.Add('English');
+  CmbLang.OnChange := @LangChanged;
+
   // ---- 底部按钮 ----
-  BtnSave := MakeBtn(Self, '保存', 520, 510, 85, @DoSave);
-  BtnCancel := MakeBtn(Self, '取消', 615, 510, 85, @DoCancel);
+  BtnSave := MakeBtn(Self, '', 545, 520, 85, @DoSave);
+  BtnCancel := MakeBtn(Self, '', 640, 520, 85, @DoCancel);
+end;
+
+procedure TSettingsForm.ApplyCaptions;
+var
+  Idx, X: Integer;
+
+  function W(const S: string): Integer;
+  begin
+    Self.Canvas.Font := Self.Font;
+    Result := Self.Canvas.TextWidth(S);
+  end;
+
+begin
+  FLoading := True;
+  try
+    Caption := L(lkSettingsCaption);
+    GBTrigger.Caption := ' ' + L(lkTrigger) + ' ';
+    GBMenu.Caption := ' ' + L(lkMenuItems) + ' ';
+
+    // 第一行：边缘开关。按实测文本宽度横向排列，英文长标签也不会互相重叠
+    CbTop.Caption := L(lkTop);
+    CbBottom.Caption := L(lkBottom);
+    CbLeft.Caption := L(lkLeft);
+    CbRight.Caption := L(lkRight);
+    X := 15;
+    CbTop.Left := X;    Inc(X, W(CbTop.Caption) + 42);
+    CbBottom.Left := X; Inc(X, W(CbBottom.Caption) + 42);
+    CbLeft.Left := X;   Inc(X, W(CbLeft.Caption) + 42);
+    CbRight.Left := X;
+
+    // 第二行：停留 / 热区 / 开机自启
+    LblDwell.Caption := L(lkDwellMs);
+    LblZone.Caption := L(lkZonePx);
+    CbAutoRun.Caption := L(lkAutoRun);
+    X := 15;
+    LblDwell.Left := X; Inc(X, W(LblDwell.Caption) + 8);
+    SeDwell.Left := X;  Inc(X, SeDwell.Width + 28);
+    LblZone.Left := X;  Inc(X, W(LblZone.Caption) + 8);
+    SeZone.Left := X;   Inc(X, SeZone.Width + 28);
+    CbAutoRun.Left := X;
+
+    // 详情区
+    LblName.Caption := L(lkName);
+    LblType.Caption := L(lkType);
+    LblTarget.Caption := L(lkTarget);
+    LblParams.Caption := L(lkParams);
+    LblWorkDir.Caption := L(lkWorkDir);
+    CbAdmin.Caption := L(lkAdmin);
+
+    // 类型下拉（保持当前选中项）
+    Idx := CmbType.ItemIndex;
+    CmbType.Clear;
+    CmbType.Items.Add(L(lkTypeApp));
+    CmbType.Items.Add(L(lkTypeUrl));
+    CmbType.Items.Add(L(lkTypeDir));
+    CmbType.Items.Add(L(lkTypeSep));
+    CmbType.ItemIndex := Idx;
+
+    // 按钮
+    BtnAdd.Caption := L(lkAdd);
+    BtnAddChild.Caption := L(lkAddChild);
+    BtnAddSep.Caption := L(lkAddSep);
+    BtnDelete.Caption := L(lkDelete);
+    BtnUp.Caption := L(lkMoveUp);
+    BtnDown.Caption := L(lkMoveDown);
+    BtnBrowseTarget.Caption := L(lkBrowse);
+    BtnBrowseDir.Caption := L(lkBrowse);
+    BtnSave.Caption := L(lkSave);
+    BtnCancel.Caption := L(lkCancel);
+
+    // 语言下拉跟随配置（FLoading 保证 OnChange 不会误触发）
+    LblLang.Caption := L(lkLanguage);
+    CmbLang.Items[0] := L(lkLangSystem);
+    if Config.Language = 'en' then
+      CmbLang.ItemIndex := 2
+    else if Config.Language = 'zh' then
+      CmbLang.ItemIndex := 1
+    else
+      CmbLang.ItemIndex := 0;  // system = 跟随系统
+  finally
+    FLoading := False;
+  end;
 end;
 
 procedure TSettingsForm.RebuildTree;
@@ -288,10 +384,49 @@ begin
     Result := TMenuItem(Node.Parent.Data).Children;
 end;
 
+function TSettingsForm.FindNodeByData(AData: TObject): TTreeNode;
+var
+  N: TTreeNode;
+begin
+  Result := nil;
+  N := Tree.Items.GetFirstNode;
+  while N <> nil do
+  begin
+    if TObject(N.Data) = AData then
+      Exit(N);
+    N := N.GetNext;
+  end;
+end;
+
+procedure TSettingsForm.InsertAndSelect(List: TMenuItemList; AIdx: Integer;
+  Item: TMenuItem);
+begin
+  List.Insert(AIdx, Item);
+  RebuildTree;
+  Tree.Selected := FindNodeByData(Item);
+end;
+
 procedure TSettingsForm.TreeSelectionChanged(Sender: TObject);
 begin
   CommitDetail;
   LoadDetail(Tree.Selected);
+end;
+
+procedure TSettingsForm.LangChanged(Sender: TObject);
+var
+  Code: string;
+begin
+  if FLoading then Exit;
+  case CmbLang.ItemIndex of
+    1: Code := 'zh';
+    2: Code := 'en';
+  else
+    Code := 'system';
+  end;
+  if Code = Config.Language then Exit;
+  Config.Language := Code;
+  SetLanguage(Code);   // 通知托盘菜单等已显示界面
+  ApplyCaptions;       // 本窗体文案重排
 end;
 
 procedure TSettingsForm.LoadDetail(Node: TTreeNode);
@@ -366,18 +501,24 @@ procedure TSettingsForm.DoAdd(Sender: TObject);
 var
   Item: TMenuItem;
   List: TMenuItemList;
+  Idx: Integer;
 begin
   CommitDetail;
   if Tree.Selected = nil then
-    List := Config.Items
+  begin
+    List := Config.Items;
+    Idx := List.Count;
+  end
   else
+  begin
+    // 插入到当前选中项的后面（同级）
     List := GetParentList(Tree.Selected);
+    Idx := List.IndexOf(TObject(Tree.Selected.Data)) + 1;
+  end;
   Item := TMenuItem.Create;
-  Item.Caption := '新项目';
+  Item.Caption := L(lkNewItem);
   Item.Typ := itApp;
-  List.Add(Item);
-  RebuildTree;
-  Tree.Selected := Tree.Items.GetLastNode;
+  InsertAndSelect(List, Idx, Item);
 end;
 
 procedure TSettingsForm.DoAddChild(Sender: TObject);
@@ -393,27 +534,32 @@ begin
   CommitDetail;
   AParent := TMenuItem(Tree.Selected.Data);
   Item := TMenuItem.Create;
-  Item.Caption := '新子项';
+  Item.Caption := L(lkNewChild);
   Item.Typ := itApp;
-  AParent.Children.Add(Item);
-  RebuildTree;
-  Tree.Selected := Tree.Items.GetLastNode;
+  // 子项加在当前项的 Children 末尾
+  InsertAndSelect(AParent.Children, AParent.Children.Count, Item);
 end;
 
 procedure TSettingsForm.DoAddSep(Sender: TObject);
 var
   Item: TMenuItem;
   List: TMenuItemList;
+  Idx: Integer;
 begin
   if Tree.Selected = nil then
-    List := Config.Items
+  begin
+    List := Config.Items;
+    Idx := List.Count;
+  end
   else
+  begin
+    // 插入到当前选中项的后面（同级）
     List := GetParentList(Tree.Selected);
+    Idx := List.IndexOf(TObject(Tree.Selected.Data)) + 1;
+  end;
   Item := TMenuItem.Create;
   Item.Typ := itSep;
-  List.Add(Item);
-  RebuildTree;
-  Tree.Selected := Tree.Items.GetLastNode;
+  InsertAndSelect(List, Idx, Item);
 end;
 
 procedure TSettingsForm.DoDelete(Sender: TObject);
@@ -445,21 +591,6 @@ var
   List: TMenuItemList;
   Idx, Target: Integer;
   MovedObj: TObject;
-
-  function FindNodeByData(AData: TObject): TTreeNode;
-  var
-    N: TTreeNode;
-  begin
-    Result := nil;
-    N := Tree.Items.GetFirstNode;
-    while N <> nil do
-    begin
-      if TObject(N.Data) = AData then
-        Exit(N);
-      N := N.GetNext;
-    end;
-  end;
-
 begin
   Node := Tree.Selected;
   if Node = nil then Exit;
@@ -529,7 +660,7 @@ begin
   end
   else
   begin
-    DlgOpen.Filter := '程序|*.exe;*.lnk;*.bat;*.cmd|所有文件|*.*';
+    DlgOpen.Filter := L(lkProgFilter);
     if DlgOpen.Execute then
       EdTarget.Text := DlgOpen.FileName;
   end;
@@ -574,10 +705,13 @@ end;
 procedure TSettingsForm.DoCancel(Sender: TObject);
 begin
   // 丢弃内存中的修改，重新从磁盘加载
-  // LoadFromFile 会释放全部旧对象，先断开详情引用防 UAF
+  // LoadFromFile 会释放全部旧对象，先断开详情引用防 UAF；
+  // LoadFromFile 内部会按磁盘上的 language 调 SetLanguage（含托盘通知），
+  // 本窗体文案需手动重排，语言下拉也会在 ApplyCaptions 中同步回配置值
   FCurrent := nil;
   Config.LoadFromFile(ConfigFilePath);
   RebuildTree;
+  ApplyCaptions;
   Close;
 end;
 

@@ -5,7 +5,7 @@ unit uLauncher;
 interface
 
 uses
-  SysUtils, Windows, uConfig;
+  SysUtils, Windows, uConfig, uLang;
 
 // 执行一个菜单项：url 打默认浏览器、dir 打 explorer、app 带参数/工作目录/提权启动
 procedure LaunchItem(AItem: TMenuItem);
@@ -66,7 +66,7 @@ begin
         Target := Trim(AItem.Target);
         if not DirectoryExists(Target) then
         begin
-          MessageBoxW(0, PWideChar(WideString('目录不存在: ' + Target)),
+          MessageBoxW(0, PWideChar(WideString(L(lkDirNotExist) + Target)),
             'octopus-launch', MB_ICONWARNING);
           Exit;
         end;
@@ -77,7 +77,7 @@ begin
         Target := Trim(AItem.Target);
         if not FileExists(Target) then
         begin
-          MessageBoxW(0, PWideChar(WideString('程序不存在: ' + Target)),
+          MessageBoxW(0, PWideChar(WideString(L(lkAppNotExist) + Target)),
             'octopus-launch', MB_ICONWARNING);
           Exit;
         end;

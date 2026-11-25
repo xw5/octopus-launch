@@ -5,7 +5,7 @@ unit uConfig;
 interface
 
 uses
-  Classes, SysUtils, Contnrs, fpjson, jsonparser;
+  Classes, SysUtils, Contnrs, fpjson, jsonparser, uLang;
 
 type
   TItemType = (itApp, itUrl, itDir, itSep);
@@ -44,6 +44,7 @@ type
     Edges: TEdges;
     DwellMs: Integer;
     EdgeZonePx: Integer;   // 边缘触发热区宽度 px
+    Language: string;      // 界面语言 'zh'/'en'/'system'（system=跟随系统，默认）
     Items: TMenuItemList;
     constructor Create;
     destructor Destroy; override;
@@ -144,6 +145,8 @@ begin
   Edges := [edTop, edBottom];
   DwellMs := 300;
   EdgeZonePx := 10;
+  Language := 'system';  // 默认跟随系统
+  SetLanguage(Language);
 end;
 
 destructor TConfig.Destroy;
@@ -175,7 +178,7 @@ begin
         Child := TMenuItem.Create;
         ParseMenuItem(Arr.Objects[I], Child);
         if (Child.Typ <> itSep) and (Child.Caption = '') then
-          Child.Caption := '(未命名)';
+          Child.Caption := L(lkUntitled);
         AItem.Children.Add(Child);
       end;
   end;
@@ -223,6 +226,9 @@ begin
     if EdgeZonePx < 2 then EdgeZonePx := 2;
     if EdgeZonePx > 200 then EdgeZonePx := 200;
 
+    Language := Obj.Get('language', Language);
+    SetLanguage(Language);
+
     Items.Clear;
     Arr := TJSONArray(Obj.Find('menu'));
     if Arr <> nil then
@@ -233,7 +239,7 @@ begin
         Item := TMenuItem.Create;
         ParseMenuItem(ChildObj, Item);
         if (Item.Typ <> itSep) and (Item.Caption = '') then
-          Item.Caption := '(未命名)';
+          Item.Caption := L(lkUntitled);
         Items.Add(Item);
       end;
   finally
@@ -284,6 +290,7 @@ begin
     Root.Add('edges', EdgeArr);
     Root.Add('dwellMs', DwellMs);
     Root.Add('edgeZone', EdgeZonePx);
+    Root.Add('language', Language);
 
     MenuArr := TJSONArray.Create;
     for I := 0 to Items.Count - 1 do

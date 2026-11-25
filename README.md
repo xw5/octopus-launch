@@ -1,5 +1,7 @@
 # octopus-launch / 章鱼启动
 
+<p align="center"><img src="docs/logo.png" alt="octopus-launch logo" width="128"></p>
+
 [中文](#中文) | [English](#english)
 
 ---
@@ -39,6 +41,7 @@ octopus-launch 是一个 Windows 桌面工具：把鼠标推到屏幕边缘并�
   "edges": ["top", "bottom"],
   "dwellMs": 300,
   "edgeZone": 10,
+  "language": "zh",
   "menu": [
     {
       "name": "终端",
@@ -70,6 +73,7 @@ octopus-launch 是一个 Windows 桌面工具：把鼠标推到屏幕边缘并�
 | `edges` | 启用的触发边缘 | `top` / `bottom` / `left` / `right`，默认上下 |
 | `dwellMs` | 边缘停留多少毫秒后触发 | 0–5000，默认 300 |
 | `edgeZone` | 边缘热区宽度（像素） | 2–200，默认 10 |
+| `language` | 界面语言（设置窗口可切换） | `zh` / `en`，默认跟随系统 |
 
 菜单项字段：`name`（名称）、`type`（`app`/`url`/`dir`/`sep`）、`target`（目标路径或网址）、`params`（程序参数）、`workdir`（工作目录）、`admin`（提权运行）、`children`（子菜单）。
 
@@ -100,6 +104,10 @@ src/
   octopus.rc/.ico     图标资源
 test/                 开发期测试脚本与截图
 ```
+
+### 许可证
+
+[MIT](LICENSE)
 
 ---
 
@@ -138,6 +146,7 @@ Example:
   "edges": ["top", "bottom"],
   "dwellMs": 300,
   "edgeZone": 10,
+  "language": "en",
   "menu": [
     {
       "name": "Terminal",
@@ -169,6 +178,7 @@ Example:
 | `edges` | Enabled trigger edges | `top` / `bottom` / `left` / `right`, default top+bottom |
 | `dwellMs` | Milliseconds to dwell at the edge before triggering | 0–5000, default 300 |
 | `edgeZone` | Edge hot-zone width in pixels | 2–200, default 10 |
+| `language` | UI language (switchable in the settings window) | `zh` / `en`, default follows the system |
 
 Menu item fields: `name`, `type` (`app`/`url`/`dir`/`sep`), `target` (path or URL), `params` (program arguments), `workdir`, `admin` (elevated launch), `children` (submenu).
 
@@ -199,3 +209,7 @@ src/
   octopus.rc/.ico     Icon resources
 test/                 Development-time test scripts and screenshots
 ```
+
+### License
+
+[MIT](LICENSE)
