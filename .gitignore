@@ -1,0 +1,29 @@
+# Free Pascal / Lazarus 编译产物
+*.o
+*.obj
+*.ppu
+*.a
+*.compiled
+*.exe
+bin/
+
+# Lazarus 会话/备份文件（.lpi 项目文件保留提交）
+*.lps
+*.bak
+*~
+
+# 由 .rc/.ico 生成的资源文件
+*.res
+
+# fpc 响应文件
+*.rsp
+
+# 日志
+*.log
+
+# 本地工具数据
+.workbuddy/
+
+# 测试调试产物（截图等）
+test/*.png
+test/*.bmp
