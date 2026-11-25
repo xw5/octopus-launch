@@ -16,7 +16,8 @@ type
     lkWorkDir, lkBrowse, lkAdmin, lkSave, lkCancel, lkTypeApp, lkTypeUrl,
     lkTypeDir, lkTypeSep, lkNewItem, lkNewChild, lkUntitled, lkEmptyMenu,
     lkTraySettings, lkTrayExit, lkLanguage, lkProgFilter, lkDirNotExist,
-    lkAppNotExist, lkLangSystem
+    lkAppNotExist, lkLangSystem, lkImport, lkExport, lkMenuFilter,
+    lkImportFailed
   );
 
   TLangNotify = procedure of object;
@@ -75,7 +76,11 @@ const
     '程序|*.exe;*.lnk;*.bat;*.cmd|所有文件|*.*',  // lkProgFilter
     '目录不存在: ',                       // lkDirNotExist
     '程序不存在: ',                       // lkAppNotExist
-    '跟随系统'                            // lkLangSystem
+    '跟随系统',                           // lkLangSystem
+    '导入',                               // lkImport
+    '导出',                               // lkExport
+    '菜单 JSON|*.json|所有文件|*.*',      // lkMenuFilter
+    '导入失败'                            // lkImportFailed
   );
 
   EN_TEXT: array[TLangKey] of string = (
@@ -118,7 +123,11 @@ const
     'Programs|*.exe;*.lnk;*.bat;*.cmd|All files|*.*',   // lkProgFilter
     'Directory not found: ',              // lkDirNotExist
     'Program not found: ',                // lkAppNotExist
-    'System'                              // lkLangSystem
+    'System',                             // lkLangSystem
+    'Import',                             // lkImport
+    'Export',                             // lkExport
+    'Menu JSON|*.json|All files|*.*',     // lkMenuFilter
+    'Import failed'                       // lkImportFailed
   );
 
 var

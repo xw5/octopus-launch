@@ -56,6 +56,9 @@ function ConfigFilePath: string;
 function ItemTypeToStr(T: TItemType): string;
 function StrToItemType(const S: string): TItemType;
 procedure DebugLog(const S: string);  // 追加调试日志到 config 同目录 debug.log
+// 菜单项列表与 JSON 文件互转（导出/导入整个菜单，不含触发等其他配置）
+procedure SaveMenuToJSON(const AFile: string; Items: TMenuItemList);
+procedure LoadMenuFromJSON(const AFile: string; Items: TMenuItemList);
 
 var
   Config: TConfig;
@@ -184,13 +187,29 @@ begin
   end;
 end;
 
+{ 将 JSON 菜单数组解析进 Items（调用方负责先 Clear） }
+procedure JSONToMenu(Arr: TJSONArray; Items: TMenuItemList);
+var
+  I: Integer;
+  Item: TMenuItem;
+begin
+  for I := 0 to Arr.Count - 1 do
+    if Arr.Objects[I] <> nil then
+    begin
+      Item := TMenuItem.Create;
+      ParseMenuItem(Arr.Objects[I], Item);
+      if (Item.Typ <> itSep) and (Item.Caption = '') then
+        Item.Caption := L(lkUntitled);
+      Items.Add(Item);
+    end;
+end;
+
 procedure TConfig.LoadFromFile(const AFile: string);
 var
   Root: TJSONData;
-  Obj, ChildObj: TJSONObject;
+  Obj: TJSONObject;
   Arr: TJSONArray;
   I: Integer;
-  Item: TMenuItem;
   EdgeStr: string;
   EdgeArr: TJSONArray;
 begin
@@ -232,16 +251,7 @@ begin
     Items.Clear;
     Arr := TJSONArray(Obj.Find('menu'));
     if Arr <> nil then
-      for I := 0 to Arr.Count - 1 do
-      begin
-        ChildObj := Arr.Objects[I];
-        if ChildObj = nil then Continue;
-        Item := TMenuItem.Create;
-        ParseMenuItem(ChildObj, Item);
-        if (Item.Typ <> itSep) and (Item.Caption = '') then
-          Item.Caption := L(lkUntitled);
-        Items.Add(Item);
-      end;
+      JSONToMenu(Arr, Items);
   finally
     Root.Free;
   end;
@@ -272,13 +282,25 @@ begin
   end;
 end;
 
+{ 将 Items 序列化为 JSON 菜单数组（调用方负责释放返回值） }
+function MenuToJSON(Items: TMenuItemList): TJSONArray;
+var
+  I: Integer;
+  Obj: TJSONObject;
+begin
+  Result := TJSONArray.Create;
+  for I := 0 to Items.Count - 1 do
+  begin
+    Obj := TJSONObject.Create;
+    WriteItemToJSON(Items[I], Obj);
+    Result.Add(Obj);
+  end;
+end;
+
 procedure TConfig.SaveToFile(const AFile: string);
 var
   Root: TJSONObject;
   EdgeArr: TJSONArray;
-  MenuArr: TJSONArray;
-  I: Integer;
-  Obj: TJSONObject;
 begin
   Root := TJSONObject.Create;
   try
@@ -291,15 +313,7 @@ begin
     Root.Add('dwellMs', DwellMs);
     Root.Add('edgeZone', EdgeZonePx);
     Root.Add('language', Language);
-
-    MenuArr := TJSONArray.Create;
-    for I := 0 to Items.Count - 1 do
-    begin
-      Obj := TJSONObject.Create;
-      WriteItemToJSON(Items[I], Obj);
-      MenuArr.Add(Obj);
-    end;
-    Root.Add('menu', MenuArr);
+    Root.Add('menu', MenuToJSON(Items));
 
     ForceDirectories(ExtractFilePath(AFile));
     with TStringList.Create do
@@ -309,6 +323,60 @@ begin
     finally
       Free;
     end;
+  finally
+    Root.Free;
+  end;
+end;
+
+procedure SaveMenuToJSON(const AFile: string; Items: TMenuItemList);
+var
+  Arr: TJSONArray;
+begin
+  Arr := MenuToJSON(Items);
+  try
+    ForceDirectories(ExtractFilePath(AFile));
+    with TStringList.Create do
+    try
+      Text := Arr.FormatJSON([], 2);
+      SaveToFile(AFile, TEncoding.UTF8);
+    finally
+      Free;
+    end;
+  finally
+    Arr.Free;
+  end;
+end;
+
+procedure LoadMenuFromJSON(const AFile: string; Items: TMenuItemList);
+var
+  Root: TJSONData;
+  J: TJSONData;
+  Arr: TJSONArray;
+begin
+  if not FileExists(AFile) then Exit;
+  with TStringList.Create do
+  try
+    LoadFromFile(AFile, TEncoding.UTF8);
+    Root := GetJSON(Text);
+  finally
+    Free;
+  end;
+  try
+    // 兼容两种格式：纯菜单数组，或完整配置对象里的 menu 字段
+    if Root.JSONType = jtArray then
+      Arr := TJSONArray(Root)
+    else if Root.JSONType = jtObject then
+    begin
+      J := TJSONObject(Root).Find('menu');
+      if (J <> nil) and (J.JSONType = jtArray) then
+        Arr := TJSONArray(J)
+      else
+        Exit;
+    end
+    else
+      Exit;
+    Items.Clear;
+    JSONToMenu(Arr, Items);
   finally
     Root.Free;
   end;

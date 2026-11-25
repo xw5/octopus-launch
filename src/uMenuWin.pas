@@ -22,9 +22,11 @@ type
     FSub: TMenuForm;
     FSubIndex: Integer;      // 已打开子菜单对应条目索引，-1=无
     FSubTimer: TTimer;
+    FSubCloseTimer: TTimer;  // 悬停移开后延时关子菜单（立即关会挡住斜穿移向子菜单的路径）
     FCloseTimer: TTimer;     // 鼠标移出后延时关闭检查
     FMonitor: TRect;
     procedure OnSubTimer(Sender: TObject);
+    procedure OnSubCloseCheck(Sender: TObject);
     procedure OnCloseCheck(Sender: TObject);
     procedure HandlePaint(Sender: TObject);
     procedure HandleMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
@@ -37,8 +39,9 @@ type
     procedure HandleCMMouseLeave(var Msg: TLMessage); message CM_MOUSELEAVE;
     function HitTest(X, Y: Integer): Integer;
     function MonitorWork: TRect;
-    procedure OpenSubmenu;
+    procedure OpenSubmenu(AIdx: Integer = -1);
     procedure CloseSubmenu;
+    function CursorInItemRow(AIdx: Integer): Boolean;
   protected
     procedure CreateParams(var Params: TCreateParams); override;
   public
@@ -131,6 +134,11 @@ begin
   FSubTimer.Enabled := False;
   FSubTimer.OnTimer := @OnSubTimer;
 
+  FSubCloseTimer := TTimer.Create(Self);
+  FSubCloseTimer.Interval := 300;
+  FSubCloseTimer.Enabled := False;
+  FSubCloseTimer.OnTimer := @OnSubCloseCheck;
+
   FCloseTimer := TTimer.Create(Self);
   FCloseTimer.Interval := 350;
   FCloseTimer.Enabled := False;
@@ -157,7 +165,9 @@ end;
 
 procedure TMenuForm.HandleCMMouseLeave(var Msg: TLMessage);
 begin
-  if FHover >= 0 then
+  // 子菜单开着时光标多半是横移进了子菜单（子菜单盖住父窗口右缘），
+  // 父条目高亮保持不清除；子菜单关了或没有子菜单才恢复正常清除
+  if (FHover >= 0) and (FSub = nil) then
   begin
     FHover := -1;
     Invalidate;
@@ -281,8 +291,12 @@ var
 begin
   Result := -1;
   Inc(Y, FScrollTop);
+  // 横向取整行判定：条目矩形只画到 Width-PAD，若严格按矩形判定，
+  // 父菜单右缘的空白带会被当成"移出条目"而立即关掉子菜单，
+  // 导致从父菜单移向子菜单时必须"快速冲过去"。行高内横向都属于该条目。
   for I := 0 to FItems.Count - 1 do
-    if PtInRect(FItemRects[I], Point(X, Y)) then
+    if (X >= 0) and (X < Width) and
+       (Y >= FItemRects[I].Top) and (Y < FItemRects[I].Bottom) then
       Exit(I);
 end;
 
@@ -381,23 +395,44 @@ var
 begin
   FCloseTimer.Enabled := False; // 鼠标回来了，取消移出关闭
   NewHover := HitTest(X, Y);
-  if NewHover = FHover then Exit;
+  if NewHover = FHover then
+  begin
+    // 仍在原条目上（含移入子菜单期间）：取消子菜单延时关闭
+    if FSub <> nil then
+      FSubCloseTimer.Enabled := False;
+    Exit;
+  end;
 
   FHover := NewHover;
   if (FHover < 0) or (FItems[FHover].Typ = itSep) or (FItems[FHover].Children.Count = 0) then
   begin
-    CloseSubmenu;
-    FSubTimer.Enabled := False;
+    // 移出条目/移到无子项条目上：不立即关子菜单。斜着移向子菜单、
+    // 或在条目间快速滑动时中途落点可能没有子项，立即关会挡住移动路径；
+    // 延时 300ms 再关，期间进入子菜单窗口会取消关闭
+    if FSub <> nil then
+    begin
+      FSubTimer.Enabled := False;
+      FSubCloseTimer.Enabled := False;
+      FSubCloseTimer.Enabled := True;
+    end
+    else
+      FSubTimer.Enabled := False;
   end
-  else if (FSub <> nil) and (FSubIndex <> FHover) then
+  else if (FSub <> nil) and (FSubIndex = FHover) then
+  begin
+    // 回到子菜单所属条目（折返或路过）：子菜单保持，取消延时关闭
+    FSubCloseTimer.Enabled := False;
+  end
+  else if FSub <> nil then
   begin
     // 已有子菜单但属于别的条目：先关，再对当前条目延时打开它自己的子菜单
+    FSubCloseTimer.Enabled := False;
     FSubTimer.Enabled := False;
     CloseSubmenu;
     FSubTimer.Tag := FHover;
     FSubTimer.Enabled := True;
   end
-  else if FSub = nil then
+  else
   begin
     // 悬停到有子项的条目：延时打开子菜单
     FSubTimer.Tag := FHover;
@@ -409,9 +444,50 @@ end;
 procedure TMenuForm.OnSubTimer(Sender: TObject);
 begin
   FSubTimer.Enabled := False;
+  // 常规路径：悬停仍在该条目上，打开子菜单。
+  // 补救路径：快速掠过该条目已移出本窗口（CM_MOUSELEAVE 已把 FHover 置 -1），
+  // 若光标仍在该条目所在的行高度带内（正冲向子菜单），照常打开
   if (FHover >= 0) and (FHover = FSubTimer.Tag)
     and (FItems[FHover].Children.Count > 0) then
-    OpenSubmenu;
+    OpenSubmenu(FHover)
+  else if (FSub = nil) and (Length(OpenMenus) > 0) then
+  begin
+    if CursorInItemRow(FSubTimer.Tag) then
+      OpenSubmenu(FSubTimer.Tag)
+  end;
+end;
+
+// 光标当前是否悬停在本菜单第 AIdx 条目对应的屏幕行带内（含横向整行）
+function TMenuForm.CursorInItemRow(AIdx: Integer): Boolean;
+var
+  P: TPoint;
+begin
+  Result := False;
+  if (AIdx < 0) or (AIdx >= FItems.Count) then Exit;
+  GetCursorPos(P);
+  // 内容坐标 → 屏幕坐标（考虑窗口位置与滚动偏移）
+  Result := (P.X >= Self.Left) and (P.X < Self.Left + Width) and
+            (P.Y >= Self.Top + FItemRects[AIdx].Top - FScrollTop) and
+            (P.Y < Self.Top + FItemRects[AIdx].Bottom - FScrollTop);
+end;
+
+procedure TMenuForm.OnSubCloseCheck(Sender: TObject);
+var
+  P: TPoint;
+begin
+  FSubCloseTimer.Enabled := False;
+  if FSub = nil then Exit;
+  GetCursorPos(P);
+  // 光标已在子菜单窗口内（子菜单会自己接管悬停）→ 取消关闭
+  if FSub.HandleAllocated and
+     PtInRect(Rect(FSub.Left, FSub.Top, FSub.Left + FSub.Width, FSub.Top + FSub.Height), P) then
+    Exit;
+  // 光标又回到了子菜单所属条目的行带内（比如轻微移出后折回）→ 取消关闭
+  if CursorInItemRow(FSubIndex) then
+    Exit;
+  DebugLog('SubCloseCheck: closing submenu');
+  CloseSubmenu;
+  Invalidate;
 end;
 
 procedure TMenuForm.HandleMouseUp(Sender: TObject; Button: TMouseButton;
@@ -432,7 +508,8 @@ begin
   if Item.Children.Count > 0 then
   begin
     FHover := Idx;
-    OpenSubmenu;
+    FSubCloseTimer.Enabled := False;
+    OpenSubmenu(Idx);
     Invalidate;
     Exit;
   end;
@@ -466,33 +543,37 @@ begin
   FSubIndex := -1;
   if FSub <> nil then
   begin
+    DebugLog('CloseSubmenu');
     FSub.CloseSubmenu;
     FSub.Release;
     FSub := nil;
   end;
 end;
 
-procedure TMenuForm.OpenSubmenu;
+procedure TMenuForm.OpenSubmenu(AIdx: Integer);
 var
   Sub: TMenuForm;
   SR: TRect;
   Work: TRect;
 begin
   CloseSubmenu;
-  if (FHover < 0) or (FItems[FHover].Children.Count = 0) then Exit;
+  if AIdx < 0 then
+    AIdx := FHover;
+  if (AIdx < 0) or (AIdx >= FItems.Count) or (FItems[AIdx].Children.Count = 0) then Exit;
 
   Sub := TMenuForm.CreateNew(nil);
-  Sub.FItems := FItems[FHover].Children;  // 引用，不拥有
+  Sub.FItems := FItems[AIdx].Children;  // 引用，不拥有
   Sub.FParentMenu := Self;
   Sub.FMonitor := FMonitor;
   Self.FSub := Sub;
-  Self.FSubIndex := FHover;
+  Self.FSubIndex := AIdx;
+  FHover := AIdx; // 补救路径下 FHover 已被 CM_MOUSELEAVE 置 -1，恢复高亮与后续判定
   // 先注册再显示，保证激活切换时父级 Deactivate 不误关
   RegisterMenu(Sub);
   Sub.Layout;
 
   Work := Sub.MonitorWork;
-  SR := FItemRects[FHover];
+  SR := FItemRects[AIdx];
   // 转屏幕坐标（父项矩形是内容坐标，需考虑父级滚动和窗口位置）
   SR.Top := SR.Top - FScrollTop + Self.Top;
   SR.Bottom := SR.Bottom - FScrollTop + Self.Top;
@@ -506,6 +587,7 @@ begin
   Sub.Left := Max(Work.Left, Min(Sub.Left, Work.Right - Sub.Width));
   Sub.Top := Max(Work.Top, Min(Sub.Top, Work.Bottom - Sub.Height));
   Sub.Show;
+  DebugLog(Format('submenu open: idx=%d at=(%d,%d) size=%dx%d', [AIdx, Sub.Left, Sub.Top, Sub.Width, Sub.Height]));
   // LCL 实测不会在句柄上保持 WS_EX_TOPMOST，菜单会落到其它窗口后面；
   // 显示后强制置顶
   SetWindowPos(Sub.Handle, HWND_TOPMOST, 0, 0, 0, 0,

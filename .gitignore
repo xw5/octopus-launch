@@ -27,3 +27,10 @@ bin/
 # 测试调试产物（截图等）
 test/*.png
 test/*.bmp
+
+# 测试运行时产物（含本地真实菜单数据）
+test/menu_roundtrip.json
+test/*.exe
+test/*.o
+test/*.ppu
+test/*.rsp

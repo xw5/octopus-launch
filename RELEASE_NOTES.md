@@ -1,5 +1,65 @@
 # Release Notes / 发布说明
 
+## v1.1.0 — 2026-11-26
+
+<a id="中文"></a>
+
+### 中文
+
+**新功能**
+
+- **菜单导入 / 导出**：设置窗口新增"导入 / 导出"按钮，可将整个菜单（含多级子菜单）保存为 JSON 文件或从文件载入，方便备份、迁移与分享。兼容纯菜单数组和完整配置对象两种格式
+
+**改进**
+
+- **子菜单交互修复**：从父菜单斜向移入子菜单不再需要"快速冲过去"——子菜单改为延时关闭（300 ms），移入子菜单窗口或折返父条目即取消关闭；快速掠过条目时若正冲向其子菜单也能照常弹出
+- **设置窗口布局**：触发区改为两栏布局（左侧 2×2 贴边方向、右侧数值与自启），导入/导出按钮位于菜单分组标题行；窗口去掉最大化按钮并固定尺寸
+- **菜单配置统一序列化**：主配置与导入/导出共用同一套菜单 JSON 读写代码
+
+**安装与使用**
+
+- 下载 `octopus_launch.exe`（x64，绿色单文件，无需安装），放到任意目录直接运行
+- 若已安装旧版本，直接覆盖运行即可（配置位置不变）
+
+**环境要求**
+
+- Windows 10 / 11（x64）
+
+**反馈**
+
+- 问题反馈：https://github.com/xw5/octopus-launch/issues
+
+---
+
+<a id="english"></a>
+
+### English
+
+**New features**
+
+- **Menu import / export**: the settings window now has "Import / Export" buttons to save the whole menu (including nested submenus) to a JSON file or load it back — for backup, migration, and sharing. Both a plain menu array and a full config object are accepted
+
+**Improvements**
+
+- **Submenu interaction fix**: moving diagonally from the parent menu into a submenu no longer requires rushing — submenus now close after a 300 ms delay, canceled when the cursor enters the submenu window or returns to the parent row; quickly brushing past an item toward its submenu still opens it
+- **Settings window layout**: trigger section rearranged into two columns (2×2 edge toggles on the left, values & auto-start on the right); Import/Export buttons sit on the menu group caption row; the window is fixed-size without a maximize button
+- **Unified menu serialization**: the main config and import/export share the same menu JSON read/write code
+
+**Install & Usage**
+
+- Download `octopus_launch.exe` (x64, portable single file, no installation required), put it anywhere and run it
+- If upgrading from an older version, just replace the executable (config location unchanged)
+
+**Requirements**
+
+- Windows 10 / 11 (x64)
+
+**Feedback**
+
+- Issues: https://github.com/xw5/octopus-launch/issues
+
+---
+
 ## v1.0.0 — 2026-11-25
 
 <a id="中文"></a>

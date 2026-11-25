@@ -23,6 +23,7 @@ type
     SeDwell, SeZone: TSpinEdit;
     // 菜单编辑区
     Tree: TTreeView;
+    BtnImport, BtnExport: TButton;
     BtnAdd, BtnAddChild, BtnAddSep, BtnDelete, BtnUp, BtnDown: TButton;
     EdName: TEdit;
     CmbType: TComboBox;
@@ -33,6 +34,7 @@ type
     // 语言
     CmbLang: TComboBox;
     DlgOpen: TOpenDialog;
+    DlgSave: TSaveDialog;
     DlgDir: TSelectDirectoryDialog;
     procedure BuildUI;
     // 按当前语言设置全部文案，并按实测文本宽度重排触发区（防中英文切换后撑破/重叠）
@@ -56,6 +58,8 @@ type
     procedure DoUp(Sender: TObject);
     procedure DoDown(Sender: TObject);
     procedure DoMove(Delta: Integer);
+    procedure DoImport(Sender: TObject);
+    procedure DoExport(Sender: TObject);
     procedure NameChanged(Sender: TObject);
     procedure TypeChanged(Sender: TObject);
     procedure TargetChanged(Sender: TObject);
@@ -107,11 +111,14 @@ begin
   Width := 740;
   Height := 570;
   Position := poScreenCenter;
+  BorderIcons := [biSystemMenu, biMinimize]; // 去掉最大化按钮
   BorderStyle := bsSingle;
+  AutoScroll := False;  // 固定尺寸对话框，杜绝内容溢出时出现滚动条
   Font.Name := 'Microsoft YaHei UI';
   Font.Size := 9;
 
   DlgOpen := TOpenDialog.Create(Self);
+  DlgSave := TSaveDialog.Create(Self);
   DlgDir := TSelectDirectoryDialog.Create(Self);
   BuildUI;
   ApplyCaptions;
@@ -167,30 +174,30 @@ procedure TSettingsForm.BuildUI;
   end;
 
 begin
-  // ---- 触发 ----
+  // ---- 触发（两栏：左=贴边方向 2×2，右=数值与自启） ----
   GBTrigger := TGroupBox.Create(Self);
   GBTrigger.Parent := Self;
   GBTrigger.Left := 10; GBTrigger.Top := 10;
   GBTrigger.Width := 720; GBTrigger.Height := 96;
 
-  CbTop := MakeCheck(GBTrigger, 15, 22);
-  CbBottom := MakeCheck(GBTrigger, 80, 22);
-  CbLeft := MakeCheck(GBTrigger, 145, 22);
-  CbRight := MakeCheck(GBTrigger, 210, 22);
+  CbTop := MakeCheck(GBTrigger, 15, 23);
+  CbBottom := MakeCheck(GBTrigger, 15, 55);
+  CbLeft := MakeCheck(GBTrigger, 140, 23);
+  CbRight := MakeCheck(GBTrigger, 140, 55);
 
-  LblDwell := MakeLabel(GBTrigger, 15, 57);
+  LblDwell := MakeLabel(GBTrigger, 300, 24);
   SeDwell := TSpinEdit.Create(Self);
   SeDwell.Parent := GBTrigger;
-  SeDwell.Left := 130; SeDwell.Top := 53; SeDwell.Width := 80;
+  SeDwell.Left := 400; SeDwell.Top := 20; SeDwell.Width := 80;
   SeDwell.MinValue := 0; SeDwell.MaxValue := 5000;
 
-  LblZone := MakeLabel(GBTrigger, 240, 57);
+  LblZone := MakeLabel(GBTrigger, 300, 56);
   SeZone := TSpinEdit.Create(Self);
   SeZone.Parent := GBTrigger;
-  SeZone.Left := 350; SeZone.Top := 53; SeZone.Width := 70;
+  SeZone.Left := 400; SeZone.Top := 52; SeZone.Width := 80;
   SeZone.MinValue := 2; SeZone.MaxValue := 200;
 
-  CbAutoRun := MakeCheck(GBTrigger, 450, 55);
+  CbAutoRun := MakeCheck(GBTrigger, 500, 54);
 
   // ---- 菜单项 ----
   GBMenu := TGroupBox.Create(Self);
@@ -198,9 +205,13 @@ begin
   GBMenu.Left := 10; GBMenu.Top := 116;
   GBMenu.Width := 720; GBMenu.Height := 390;
 
+  // 导入/导出：位于分组框标题行右侧、树控件上方（与"菜单项"标题同行）
+  BtnImport := MakeBtn(GBMenu, '', 115, 8, 56, @DoImport);
+  BtnExport := MakeBtn(GBMenu, '', 176, 8, 56, @DoExport);
+
   Tree := TTreeView.Create(Self);
   Tree.Parent := GBMenu;
-  Tree.Left := 10; Tree.Top := 18; Tree.Width := 250; Tree.Height := 360;
+  Tree.Left := 10; Tree.Top := 40; Tree.Width := 250; Tree.Height := 338;
   Tree.OnSelectionChanged := @TreeSelectionChanged;
   Tree.ReadOnly := True;
 
@@ -284,27 +295,30 @@ begin
     GBTrigger.Caption := ' ' + L(lkTrigger) + ' ';
     GBMenu.Caption := ' ' + L(lkMenuItems) + ' ';
 
-    // 第一行：边缘开关。按实测文本宽度横向排列，英文长标签也不会互相重叠
+    // 触发区两栏布局：左栏 2×2 贴边方向，右栏数值设置。
+    // 按实测文本宽度重排，英文长标签也不会互相重叠
     CbTop.Caption := L(lkTop);
     CbBottom.Caption := L(lkBottom);
     CbLeft.Caption := L(lkLeft);
     CbRight.Caption := L(lkRight);
-    X := 15;
-    CbTop.Left := X;    Inc(X, W(CbTop.Caption) + 42);
-    CbBottom.Left := X; Inc(X, W(CbBottom.Caption) + 42);
-    CbLeft.Left := X;   Inc(X, W(CbLeft.Caption) + 42);
-    CbRight.Left := X;
+    CbTop.Left := 15;    CbTop.Top := 23;
+    CbBottom.Left := 15; CbBottom.Top := 55;
+    X := 15 + W(CbTop.Caption) + 42;   // 左栏第二列缩进
+    if 15 + W(CbLeft.Caption) + 42 > X then
+      X := 15 + W(CbLeft.Caption) + 42;
+    CbLeft.Left := X;  CbLeft.Top := 23;
+    CbRight.Left := X; CbRight.Top := 55;
 
-    // 第二行：停留 / 热区 / 开机自启
+    // 右栏：标签右对齐，使两个 SpinEdit 左缘对齐成一列
     LblDwell.Caption := L(lkDwellMs);
     LblZone.Caption := L(lkZonePx);
     CbAutoRun.Caption := L(lkAutoRun);
-    X := 15;
-    LblDwell.Left := X; Inc(X, W(LblDwell.Caption) + 8);
-    SeDwell.Left := X;  Inc(X, SeDwell.Width + 28);
-    LblZone.Left := X;  Inc(X, W(LblZone.Caption) + 8);
-    SeZone.Left := X;   Inc(X, SeZone.Width + 28);
-    CbAutoRun.Left := X;
+    LblDwell.Left := 400 - 8 - W(LblDwell.Caption);
+    LblZone.Left := 400 - 8 - W(LblZone.Caption);
+    LblDwell.Top := SeDwell.Top + 4;
+    LblZone.Top := SeZone.Top + 4;
+    CbAutoRun.Left := 400 + SeZone.Width + 16;
+    CbAutoRun.Top := SeZone.Top + 2;
 
     // 详情区
     LblName.Caption := L(lkName);
@@ -330,6 +344,8 @@ begin
     BtnDelete.Caption := L(lkDelete);
     BtnUp.Caption := L(lkMoveUp);
     BtnDown.Caption := L(lkMoveDown);
+    BtnImport.Caption := L(lkImport);
+    BtnExport.Caption := L(lkExport);
     BtnBrowseTarget.Caption := L(lkBrowse);
     BtnBrowseDir.Caption := L(lkBrowse);
     BtnSave.Caption := L(lkSave);
@@ -604,6 +620,30 @@ begin
   Tree.Selected := FindNodeByData(MovedObj);
   if Tree.Selected <> nil then
     LoadDetail(Tree.Selected);
+end;
+
+procedure TSettingsForm.DoImport(Sender: TObject);
+begin
+  DlgOpen.Filter := L(lkMenuFilter);
+  if not DlgOpen.Execute then Exit;
+  // 载入会释放全部旧菜单对象，先断开详情引用防 UAF（同 DoDelete/DoCancel）
+  FCurrent := nil;
+  try
+    LoadMenuFromJSON(DlgOpen.FileName, Config.Items);
+  except
+    on E: Exception do
+      MessageDlg(L(lkImportFailed) + ': ' + E.Message, mtError, [mbOK], 0);
+  end;
+  RebuildTree;
+end;
+
+procedure TSettingsForm.DoExport(Sender: TObject);
+begin
+  CommitDetail;
+  DlgSave.Filter := L(lkMenuFilter);
+  DlgSave.FileName := 'menu.json';
+  if not DlgSave.Execute then Exit;
+  SaveMenuToJSON(DlgSave.FileName, Config.Items);
 end;
 
 procedure TSettingsForm.NameChanged(Sender: TObject);
